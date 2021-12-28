@@ -1,20 +1,25 @@
 package net.dugged.tomrum;
 
 import cpw.mods.fml.client.event.ConfigChangedEvent;
+import cpw.mods.fml.client.registry.ClientRegistry;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.Mod;
+import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.InputEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.gameevent.TickEvent.Phase;
+import net.dugged.tomrum.mixins.ISoundHandler;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiMainMenu;
 import net.minecraft.client.gui.GuiMultiplayer;
+import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.settings.GameSettings;
+import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
+import net.minecraftforge.client.event.GuiOpenEvent;
 import net.minecraftforge.client.event.RenderBlockOverlayEvent;
 import net.minecraftforge.client.event.RenderBlockOverlayEvent.OverlayType;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
@@ -28,8 +33,10 @@ public class Tomrum {
 	public static Tomrum INSTANCE;
 	public static Config CONFIG;
 	public static Logger LOGGER;
-	private long clientTicks;
+	private final KeyBinding reloadAudioEngineKey = new KeyBinding("key.tomrum.reload_audio", Keyboard.KEY_B, "key.categories.misc");
 	private final ChunkBorderRenderer chunkBorderRenderer = new ChunkBorderRenderer();
+	private GuiScreen previousScreen;
+	private long clientTicks;
 	public final CompassTeleport compass = new CompassTeleport();
 	public String pistonExtensionTexture;
 	public boolean v4Protocol = true;
@@ -40,6 +47,11 @@ public class Tomrum {
 		FMLCommonHandler.instance().bus().register(this);
 		CONFIG = new Config(event.getSuggestedConfigurationFile());
 		LOGGER = event.getModLog();
+	}
+
+	@Mod.EventHandler
+	public void init(final FMLInitializationEvent event) {
+		ClientRegistry.registerKeyBinding(this.reloadAudioEngineKey);
 	}
 
 	@SubscribeEvent
@@ -53,6 +65,10 @@ public class Tomrum {
 	public void onKeyPress(final InputEvent.KeyInputEvent event) {
 		if (Keyboard.isKeyDown(Keyboard.KEY_F3) && Keyboard.isKeyDown(Keyboard.KEY_G)) {
 			this.chunkBorderRenderer.toggleVisibility();
+		}
+
+		if (this.reloadAudioEngineKey.isPressed()) {
+			((ISoundHandler) Minecraft.getMinecraft().getSoundHandler()).getSoundManager().reloadSoundSystem();
 		}
 	}
 
@@ -92,11 +108,27 @@ public class Tomrum {
 
 	@SubscribeEvent
 	public void onChat(final ClientChatReceivedEvent event) {
+		if (!CompassTeleport.hasTeleportingCompass()) {
+			return;
+		}
+
 		if (event.message instanceof ChatComponentTranslation) {
-			final ChatComponentTranslation message = (ChatComponentTranslation) event.message;
-			if ("commands.tp.success.coordinates".equals(message.getKey()) && CompassTeleport.hasTeleportingCompass()) {
+			ChatComponentTranslation message = (ChatComponentTranslation) event.message;
+			if ("chat.type.admin".equals(message.getKey())) {
+				message = (ChatComponentTranslation) message.getFormatArgs()[1];
+			}
+
+			if ("commands.tp.success.coordinates".equals(message.getKey())) {
 				event.setCanceled(true);
 			}
+		}
+	}
+
+	@SubscribeEvent
+	public void onChangeScreen(final GuiOpenEvent event) {
+		final GuiScreen previous = Minecraft.getMinecraft().currentScreen;
+		if (!(previous instanceof GuiMultiplayer)) {
+			this.previousScreen = previous;
 		}
 	}
 
@@ -104,7 +136,7 @@ public class Tomrum {
 	public void onClientTick(final TickEvent.ClientTickEvent event) {
 		final Minecraft mc = Minecraft.getMinecraft();
 		if (event.phase == Phase.START && mc.currentScreen instanceof GuiMultiplayer && clientTicks++ % 600L == 0L) {
-			mc.displayGuiScreen(new GuiMultiplayer(new GuiMainMenu()));
+			mc.displayGuiScreen(new GuiMultiplayer(this.previousScreen));
 		}
 	}
 }
